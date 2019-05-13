@@ -3,6 +3,7 @@ package com.kalom.unipismartalert;
 import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
@@ -14,9 +15,12 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.CountDownTimer;
 import android.preference.PreferenceManager;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -29,9 +33,18 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.database.ChildEventListener;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
@@ -45,6 +58,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private float deltaZ = 0;
     private float plungeThreshold = 0;
     private float quakeThreshold = 0;
+    private long currentTime = 0;
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private Speaker speaker;
@@ -53,11 +67,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private SharedPreferences preferences;
     private Double latitude, longitude;
     private boolean isActiveCountDownTimer = false;
+    private DatabaseReference ref;
     private static final String FINE_LOCATION = Manifest.permission.ACCESS_FINE_LOCATION;
     private static final String COURSE_LOCATION = Manifest.permission.ACCESS_COARSE_LOCATION;
     private static final String SEND_SMS = Manifest.permission.SEND_SMS;
     private static final String READ_PHONE_STATE = Manifest.permission.READ_PHONE_STATE;
     private static final int PERMGRANTED = PackageManager.PERMISSION_GRANTED;
+    private List<QuakeDataModel> quakeDataList = new ArrayList<>();
+    private boolean runOnlyOnce;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -171,9 +188,24 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 }
             }.start();
         }
-        if (deltaZ < quakeThreshold) {
 
+        double quake = (Math.sqrt(Math.pow(event.values[0], 2) + Math.pow(event.values[1], 2)) - SensorManager.GRAVITY_EARTH);
+        if (isPhonePluggedIn(this) && quake > 0.5 && !runOnlyOnce) {
+            runOnlyOnce = true;
+            FirebaseApp.initializeApp(this);
+            ref = FirebaseDatabase.getInstance().getReference().child("earthquakes");
+            currentTime = new Date().getTime();
+        } else if (quake < 0.5 && runOnlyOnce) {
+            runOnlyOnce = false;
+            QuakeDataModel quakeData = new QuakeDataModel(longitude, latitude);
+            quakeData.setCurrentTime(currentTime);
+            ref.setValue(quakeData);
         }
+        getTimeStamp();
+        if (quakeDataList.size() >= 100) {
+            message("DEATH EVERYWHERE!!!");
+        }
+
     }
 
     @Override
@@ -265,5 +297,55 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }
     }
+
+    public static boolean isPhonePluggedIn(Context context) {
+        boolean charging = false;
+
+        final Intent batteryIntent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        int status = batteryIntent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+        boolean batteryCharge = (status == BatteryManager.BATTERY_STATUS_CHARGING);
+
+//        int chargePlug = batteryIntent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+//        boolean usbCharge = (chargePlug == BatteryManager.BATTERY_PLUGGED_USB);
+//        boolean acCharge = (chargePlug == BatteryManager.BATTERY_PLUGGED_AC);
+//
+        if (batteryCharge) {
+            charging = true;
+        }
+//        if (usbCharge) {
+//            charging = true;
+//        }
+//        if (acCharge) {
+//            charging = true;
+//        }
+
+        return charging;
+    }
+
+    private void getTimeStamp() {
+        FirebaseApp.initializeApp(this);
+        ref = FirebaseDatabase.getInstance().getReference("earthquakes");
+        ref.orderByChild("currentTime").startAt(currentTime - 5000).endAt(currentTime + 5000).addChildEventListener(new ChildEventListener() {
+            @RequiresApi(api = Build.VERSION_CODES.KITKAT)
+            @Override
+            public void onChildAdded(@NonNull DataSnapshot dataSnapshot, String prevChildKey) {
+                QuakeDataModel data = dataSnapshot.getValue(QuakeDataModel.class);
+                quakeDataList.add(data);
+            }
+
+            public void onChildChanged(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
+            }
+
+            public void onChildRemoved(@NonNull DataSnapshot dataSnapshot) {
+            }
+
+            public void onChildMoved(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
+            }
+
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+            }
+        });
+    }
+
 
 }
