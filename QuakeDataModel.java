@@ -1,15 +1,18 @@
 package com.kalom.unipismartalert;
 
-import java.util.Date;
-
 public class QuakeDataModel {
 
     private long currentTime;
-    private String duration;
-    private double latitude;
-    private double longtitude;
+    private String latitude;
+    private String longtitude;
 
-    public QuakeDataModel(double latitude, double longtitude) {
+    public QuakeDataModel(String latitude, String longtitude) {
+        this.latitude = latitude;
+        this.longtitude = longtitude;
+    }
+
+    public QuakeDataModel(long currentTime, String latitude, String longtitude) {
+        this.currentTime = currentTime;
         this.latitude = latitude;
         this.longtitude = longtitude;
     }
@@ -22,27 +25,19 @@ public class QuakeDataModel {
         return currentTime;
     }
 
-    public String getDuration() {
-        return duration;
-    }
-
-    public void setDuration(String duration) {
-        this.duration = duration;
-    }
-
-    public double getLatitude() {
+    public String getLatitude() {
         return latitude;
     }
 
-    public void setLatitude(double latitude) {
+    public void setLatitude(String latitude) {
         this.latitude = latitude;
     }
 
-    public double getLongtitude() {
+    public String getLongtitude() {
         return longtitude;
     }
 
-    public void setLongtitude(double longtitude) {
+    public void setLongtitude(String longtitude) {
         this.longtitude = longtitude;
     }
 }

@@ -27,7 +27,6 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.telephony.SmsManager;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
@@ -47,9 +46,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener {
+public class MainActivity extends AppCompatActivity implements SensorEventListener, LocationListener {
 
     private static final int MY_PERMISSIONS_REQUEST_SEND_SMS = 0;
     private Button abordButton, sosButton, speekerButton;
@@ -59,22 +57,26 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private float plungeThreshold = 0;
     private float quakeThreshold = 0;
     private long currentTime = 0;
+    private long quekeId;
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private Speaker speaker;
     private LocationManager locationManager;
     private SmsManager smsManager;
     private SharedPreferences preferences;
-    private Double latitude, longitude;
+    private String latitude, longitude;
     private boolean isActiveCountDownTimer = false;
-    private DatabaseReference ref;
+    private static boolean mLocationPermGranted = false;
     private static final String FINE_LOCATION = Manifest.permission.ACCESS_FINE_LOCATION;
     private static final String COURSE_LOCATION = Manifest.permission.ACCESS_COARSE_LOCATION;
     private static final String SEND_SMS = Manifest.permission.SEND_SMS;
     private static final String READ_PHONE_STATE = Manifest.permission.READ_PHONE_STATE;
     private static final int PERMGRANTED = PackageManager.PERMISSION_GRANTED;
+    private static final int LOCATION_PERMISSION_REQUEST_CODE = 1234;
     private List<QuakeDataModel> quakeDataList = new ArrayList<>();
     private boolean runOnlyOnce;
+
+    private DatabaseReference ref = FirebaseDatabase.getInstance().getReference().child("earthquakes");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -98,13 +100,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sosButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (sentSMS()) {
+                if (getLocationPermission() && mLocationPermGranted && canSentSMS()) {
                     Collection<String> phoneList;
                     phoneList = read().values();
                     for (String element : phoneList) {
                         Double[] location = getLocationData();
-                        latitude = location[0];
-                        longitude = location[1];
+                        latitude = location[0].toString();
+                        longitude = location[1].toString();
                         sendSMSMessage(element);
                     }
                     message("Messages Sent!");
@@ -152,7 +154,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         return result;
     }
 
-    private boolean sentSMS() {
+    private boolean canSentSMS() {
         if (ActivityCompat.checkSelfPermission(this, SEND_SMS) != PERMGRANTED
                 || ActivityCompat.checkSelfPermission(this, READ_PHONE_STATE) != PERMGRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{SEND_SMS, READ_PHONE_STATE}, 123);
@@ -190,18 +192,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         double quake = (Math.sqrt(Math.pow(event.values[0], 2) + Math.pow(event.values[1], 2)) - SensorManager.GRAVITY_EARTH);
-        if (isPhonePluggedIn(this) && quake > 0.5 && !runOnlyOnce) {
+        if (isPhonePluggedIn(this) && quake > 2 && !runOnlyOnce) {
             runOnlyOnce = true;
             FirebaseApp.initializeApp(this);
-            ref = FirebaseDatabase.getInstance().getReference().child("earthquakes");
             currentTime = new Date().getTime();
         } else if (quake < 0.5 && runOnlyOnce) {
             runOnlyOnce = false;
             QuakeDataModel quakeData = new QuakeDataModel(longitude, latitude);
             quakeData.setCurrentTime(currentTime);
-            ref.setValue(quakeData);
+            ref.child(Long.toString(quekeId++)).setValue(quakeData);
         }
-        getTimeStamp();
+//        getTimeStamp();
         if (quakeDataList.size() >= 100) {
             message("DEATH EVERYWHERE!!!");
         }
@@ -226,8 +227,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     public void write() {
         SharedPreferences.Editor editor = preferences.edit();
         editor.putString("anna", "6976860669");
-//        editor.putString("giorgos", "6972849576");
-//        editor.putString("giannis", "6938648259");
+        editor.putString("mhtsos", "6958619314");
         editor.apply();
     }
 
@@ -251,12 +251,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             plungeThreshold = accelerometer.getMaximumRange() / 4;
             quakeThreshold = accelerometer.getMaximumRange();
         }
-        if (ActivityCompat.checkSelfPermission(this, FINE_LOCATION) != PERMGRANTED &&
-                ActivityCompat.checkSelfPermission(this, COURSE_LOCATION) != PERMGRANTED) {
-            return;
-        }
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, (LocationListener) this);
+        if (ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 123);
+        else
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, this);
     }
+
 
     protected void sendSMSMessage(String phoneNo) {
         if (ContextCompat.checkSelfPermission(this,
@@ -272,31 +273,32 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
-        switch (requestCode) {
-            case MY_PERMISSIONS_REQUEST_SEND_SMS: {
-                if (grantResults.length > 0
-                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    SmsManager smsManager = SmsManager.getDefault();
-                    Collection<String> phoneList;
-                    phoneList = read().values();
-                    SMSmodel sms = new SMSmodel();
-                    sms.setPhoneNum((ArrayList<String>) phoneList);
-                    sms.setMessage("Βρίσκομαι στην τοποθεσία με γεωγραφικό μήκος " + longitude + " και γεωγραφικό πλάτος : " + latitude + " και χρειάζομαι βοήθεια");
-                    for (String phoneNo : sms.getPhoneNum()) {
-                        smsManager.sendTextMessage(phoneNo, null, sms.getMessage(), null, null);
-                    }
-                    Toast.makeText(getApplicationContext(), "SMS sent.",
-                            Toast.LENGTH_LONG).show();
-                } else {
-                    Toast.makeText(getApplicationContext(),
-                            "SMS faild, please try again.", Toast.LENGTH_LONG).show();
-                    return;
-                }
-            }
-        }
-    }
+//    @Override
+//    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+//        switch (requestCode) {
+//            case MY_PERMISSIONS_REQUEST_SEND_SMS: {
+//                if (grantResults.length > 0
+//                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+//                    SmsManager smsManager = SmsManager.getDefault();
+//                    Collection<String> phoneList;
+//                    phoneList = read().values();
+//                    SMSmodel sms = new SMSmodel();
+//                    sms.setPhoneNum((ArrayList<String>) phoneList);
+//                    sms.setMessage("Βρίσκομαι στην τοποθεσία με γεωγραφικό μήκος " + longitude + " και γεωγραφικό πλάτος : " + latitude + " και χρειάζομαι βοήθεια");
+//                    for (String phoneNo : sms.getPhoneNum()) {
+//                        smsManager.sendTextMessage(phoneNo, null, sms.getMessage(), null, null);
+//                    }
+//                    Toast.makeText(getApplicationContext(), "SMS sent.",
+//                            Toast.LENGTH_LONG).show();
+//                } else {
+//                    Toast.makeText(getApplicationContext(),
+//                            "SMS faild, please try again.", Toast.LENGTH_LONG).show();
+//                    return;
+//                }
+//            }
+//        }
+//    }
+
 
     public static boolean isPhonePluggedIn(Context context) {
         boolean charging = false;
@@ -305,16 +307,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         int status = batteryIntent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
         boolean batteryCharge = (status == BatteryManager.BATTERY_STATUS_CHARGING);
 
-//        int chargePlug = batteryIntent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
-//        boolean usbCharge = (chargePlug == BatteryManager.BATTERY_PLUGGED_USB);
+        int chargePlug = batteryIntent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+        boolean usbCharge = (chargePlug == BatteryManager.BATTERY_PLUGGED_USB);
 //        boolean acCharge = (chargePlug == BatteryManager.BATTERY_PLUGGED_AC);
-//
+
         if (batteryCharge) {
             charging = true;
         }
-//        if (usbCharge) {
-//            charging = true;
-//        }
+        if (usbCharge) {
+            charging = true;
+        }
 //        if (acCharge) {
 //            charging = true;
 //        }
@@ -347,5 +349,48 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
     }
 
+    private boolean getLocationPermission() {
+        String[] permissions = {Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION};
 
+        if (ContextCompat.checkSelfPermission(this.getApplicationContext(),
+                FINE_LOCATION) == PERMGRANTED) {
+            if (ContextCompat.checkSelfPermission(this.getApplicationContext(),
+                    COURSE_LOCATION) == PERMGRANTED) {
+                mLocationPermGranted = true;
+                return true;
+//                initMap();
+            } else {
+                ActivityCompat.requestPermissions(this,
+                        permissions,
+                        LOCATION_PERMISSION_REQUEST_CODE);
+                return false;
+            }
+        } else {
+            ActivityCompat.requestPermissions(this,
+                    permissions,
+                    LOCATION_PERMISSION_REQUEST_CODE);
+            return false;
+        }
+    }
+
+    @Override
+    public void onLocationChanged(Location location) {
+
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+
+    }
+
+    @Override
+    public void onProviderDisabled(String provider) {
+
+    }
 }
