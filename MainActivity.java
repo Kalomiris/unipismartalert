@@ -47,7 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener, LocationListener {
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     private static final int MY_PERMISSIONS_REQUEST_SEND_SMS = 0;
     private Button abordButton, sosButton, speekerButton;
@@ -72,11 +72,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final String SEND_SMS = Manifest.permission.SEND_SMS;
     private static final String READ_PHONE_STATE = Manifest.permission.READ_PHONE_STATE;
     private static final int PERMGRANTED = PackageManager.PERMISSION_GRANTED;
-    private static final int LOCATION_PERMISSION_REQUEST_CODE = 1234;
+    private static final int REQUEST_CODE = 1234;
     private List<QuakeDataModel> quakeDataList = new ArrayList<>();
     private boolean runOnlyOnce;
+//    private boolean canSentSMS;
 
     private DatabaseReference ref = FirebaseDatabase.getInstance().getReference().child("earthquakes");
+    GPSTracker gps;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -100,19 +102,30 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sosButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (getLocationPermission() && mLocationPermGranted && canSentSMS()) {
-                    Collection<String> phoneList;
-                    phoneList = read().values();
-                    for (String element : phoneList) {
-                        Double[] location = getLocationData();
-                        latitude = location[0].toString();
-                        longitude = location[1].toString();
-                        sendSMSMessage(element);
-                    }
+                gps = new GPSTracker(MainActivity.this);
+
+                // check if GPS enabled
+                if (gps.canGetLocation()) {
+                    latitude = String.valueOf(gps.getLatitude());
+                    longitude = String.valueOf(gps.getLongitude());
+                    sendSMSMessage();
                     message("Messages Sent!");
                 } else {
                     message("Message Failed...");
                 }
+//                if (canSentSMS()) {
+//                    Collection<String> phoneList;
+//                    phoneList = read().values();
+//                    for (String element : phoneList) {
+////                        Double[] location = getLocationData();
+////                        latitude = location[0].toString();
+////                        longitude = location[1].toString();
+//                        sendSMSMessage(element);
+//                    }
+//                    message("Messages Sent!");
+//                } else {
+//                    message("Message Failed...");
+//                }
             }
         });
         speekerButton.setOnClickListener(new View.OnClickListener() {
@@ -127,42 +140,42 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
          */
     }
 
-    private Double[] getLocationData() {
-        final Double[] result = new Double[2];
-        new LocationListener() {
-            @Override
-            public void onLocationChanged(Location location) {
-                result[0] = location.getLatitude();
-                result[1] = location.getLongitude();
-            }
+//    private Double[] getLocationData() {
+//        final Double[] result = new Double[2];
+//        new LocationListener() {
+//            @Override
+//            public void onLocationChanged(Location location) {
+//                result[0] = location.getLatitude();
+//                result[1] = location.getLongitude();
+//            }
+//
+//            @Override
+//            public void onStatusChanged(String provider, int status, Bundle extras) {
+//
+//            }
+//
+//            @Override
+//            public void onProviderEnabled(String provider) {
+//
+//            }
+//
+//            @Override
+//            public void onProviderDisabled(String provider) {
+//
+//            }
+//        };
+//        return result;
+//    }
 
-            @Override
-            public void onStatusChanged(String provider, int status, Bundle extras) {
-
-            }
-
-            @Override
-            public void onProviderEnabled(String provider) {
-
-            }
-
-            @Override
-            public void onProviderDisabled(String provider) {
-
-            }
-        };
-        return result;
-    }
-
-    private boolean canSentSMS() {
-        if (ActivityCompat.checkSelfPermission(this, SEND_SMS) != PERMGRANTED
-                || ActivityCompat.checkSelfPermission(this, READ_PHONE_STATE) != PERMGRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{SEND_SMS, READ_PHONE_STATE}, 123);
-            return false;
-        } else {
-            return true;
-        }
-    }
+//    private boolean canSentSMS() {
+//        if (ActivityCompat.checkSelfPermission(this, SEND_SMS) != PERMGRANTED
+//                || ActivityCompat.checkSelfPermission(this, READ_PHONE_STATE) != PERMGRANTED) {
+//            ActivityCompat.requestPermissions(this, new String[]{SEND_SMS, READ_PHONE_STATE}, 123);
+//            return false;
+//        } else {
+//            return true;
+//        }
+//    }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
@@ -214,10 +227,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     }
 
-    private void message(String messageKey) {
-        Toast.makeText(this, messageKey, Toast.LENGTH_SHORT).show();
-    }
-
     public HashMap<String, String> read() {
         Map<String, ?> result;
         result = preferences.getAll();
@@ -227,8 +236,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     public void write() {
         SharedPreferences.Editor editor = preferences.edit();
         editor.putString("anna", "6976860669");
-        editor.putString("mhtsos", "6958619314");
+//        editor.putString("mhtsos", "6958619314");
         editor.apply();
+    }
+
+    private void message(String messageKey) {
+        Toast.makeText(this, messageKey, Toast.LENGTH_SHORT).show();
     }
 
     private void initializeView() {
@@ -242,8 +255,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void initializeService() {
+        getLocationPermission();
+//        getSMSPermission();
         sensorManager = (SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
-        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+//        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         write();
         if (sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null) {
             accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
@@ -251,15 +266,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             plungeThreshold = accelerometer.getMaximumRange() / 4;
             quakeThreshold = accelerometer.getMaximumRange();
         }
-        if (ActivityCompat.checkSelfPermission(this,
-                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 123);
-        else
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, this);
+//        if (ActivityCompat.checkSelfPermission(this,
+//                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+//            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 123);
+//        else
+//            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000, (float) 0.1, this);
     }
 
 
-    protected void sendSMSMessage(String phoneNo) {
+    protected void sendSMSMessage() {
         if (ContextCompat.checkSelfPermission(this,
                 Manifest.permission.SEND_SMS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -273,31 +288,25 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-//    @Override
-//    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
-//        switch (requestCode) {
-//            case MY_PERMISSIONS_REQUEST_SEND_SMS: {
-//                if (grantResults.length > 0
-//                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-//                    SmsManager smsManager = SmsManager.getDefault();
-//                    Collection<String> phoneList;
-//                    phoneList = read().values();
-//                    SMSmodel sms = new SMSmodel();
-//                    sms.setPhoneNum((ArrayList<String>) phoneList);
-//                    sms.setMessage("Βρίσκομαι στην τοποθεσία με γεωγραφικό μήκος " + longitude + " και γεωγραφικό πλάτος : " + latitude + " και χρειάζομαι βοήθεια");
-//                    for (String phoneNo : sms.getPhoneNum()) {
-//                        smsManager.sendTextMessage(phoneNo, null, sms.getMessage(), null, null);
-//                    }
-//                    Toast.makeText(getApplicationContext(), "SMS sent.",
-//                            Toast.LENGTH_LONG).show();
-//                } else {
-//                    Toast.makeText(getApplicationContext(),
-//                            "SMS faild, please try again.", Toast.LENGTH_LONG).show();
-//                    return;
-//                }
-//            }
-//        }
-//    }
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case MY_PERMISSIONS_REQUEST_SEND_SMS: {
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    SmsManager smsManager = SmsManager.getDefault();
+                    String message = "Βρίσκομαι στην τοποθεσία με γεωγραφικό μήκος " + longitude + " και γεωγραφικό πλάτος : " + latitude + " και χρειάζομαι βοήθεια";
+                    for (String phoneNo : read().values()) {
+                        smsManager.sendTextMessage(phoneNo, null, message, null, null);
+                    }
+                } else {
+                    Toast.makeText(getApplicationContext(),
+                            "SMS faild, please try again.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+            }
+        }
+    }
 
 
     public static boolean isPhonePluggedIn(Context context) {
@@ -349,48 +358,37 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
     }
 
-    private boolean getLocationPermission() {
-        String[] permissions = {Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION};
+    private void getLocationPermission() {
+        try {
+            if (ActivityCompat.checkSelfPermission(this, FINE_LOCATION)
+                    != PERMGRANTED) {
 
-        if (ContextCompat.checkSelfPermission(this.getApplicationContext(),
-                FINE_LOCATION) == PERMGRANTED) {
-            if (ContextCompat.checkSelfPermission(this.getApplicationContext(),
-                    COURSE_LOCATION) == PERMGRANTED) {
-                mLocationPermGranted = true;
-                return true;
-//                initMap();
-            } else {
-                ActivityCompat.requestPermissions(this,
-                        permissions,
-                        LOCATION_PERMISSION_REQUEST_CODE);
-                return false;
+                ActivityCompat.requestPermissions(this, new String[]{FINE_LOCATION},
+                        REQUEST_CODE);
+
             }
-        } else {
-            ActivityCompat.requestPermissions(this,
-                    permissions,
-                    LOCATION_PERMISSION_REQUEST_CODE);
-            return false;
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
-    @Override
-    public void onLocationChanged(Location location) {
-
-    }
-
-    @Override
-    public void onStatusChanged(String provider, int status, Bundle extras) {
-
-    }
-
-    @Override
-    public void onProviderEnabled(String provider) {
-
-    }
-
-    @Override
-    public void onProviderDisabled(String provider) {
-
-    }
+//    private void getSMSPermission() {
+//        try {
+//            if (ContextCompat.checkSelfPermission(this,
+//                    Manifest.permission.SEND_SMS)
+//                    != PackageManager.PERMISSION_GRANTED) {
+//                if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+//                        Manifest.permission.SEND_SMS)) {
+//                } else {
+//                    ActivityCompat.requestPermissions(this,
+//                            new String[]{Manifest.permission.SEND_SMS},
+//                            MY_PERMISSIONS_REQUEST_SEND_SMS);
+//                }
+//            } else {
+//                canSentSMS = true;
+//            }
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+//    }
 }
