@@ -1,6 +1,8 @@
 package com.kalom.unipismartalert;
 
-public class QuakeDataModel {
+import java.io.Serializable;
+
+public class QuakeDataModel implements Serializable {
 
     private long currentTime;
     private String latitude;
@@ -15,6 +17,9 @@ public class QuakeDataModel {
         this.currentTime = currentTime;
         this.latitude = latitude;
         this.longtitude = longtitude;
+    }
+
+    public QuakeDataModel() {
     }
 
     public void setCurrentTime(long currentTime) {

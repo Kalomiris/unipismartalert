@@ -191,8 +191,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 @Override
                 public void onTick(long millisUntilFinished) {
                     countdownText.setText(java.lang.String.valueOf(TimeUnit.MILLISECONDS.toSeconds(millisUntilFinished)));
-                    toneGen1 = new ToneGenerator(AudioManager.STREAM_MUSIC, 1000);
-                    toneGen1.startTone(ToneGenerator.TONE_CDMA_ABBR_ALERT, 1500);
+                    try {
+                        toneGen1 = new ToneGenerator(AudioManager.STREAM_MUSIC, 1000);
+                        toneGen1.startTone(ToneGenerator.TONE_CDMA_ABBR_ALERT, 1500);
+                    }catch (Exception e){
+                        e.printStackTrace();
+                    }
                 }
 
                 @Override
@@ -214,9 +218,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             QuakeDataModel quakeData = new QuakeDataModel(longitude, latitude);
             quakeData.setCurrentTime(currentTime);
             ref.child(Long.toString(quekeId++)).setValue(quakeData);
+            getTimeStamp();
         }
-//        getTimeStamp();
-        if (quakeDataList.size() >= 100) {
+        if (quakeDataList.size() >= 5) {
             message("DEATH EVERYWHERE!!!");
         }
 
@@ -336,7 +340,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void getTimeStamp() {
         FirebaseApp.initializeApp(this);
         ref = FirebaseDatabase.getInstance().getReference("earthquakes");
-        ref.orderByChild("currentTime").startAt(currentTime - 5000).endAt(currentTime + 5000).addChildEventListener(new ChildEventListener() {
+        ref.addChildEventListener(new ChildEventListener() {
             @RequiresApi(api = Build.VERSION_CODES.KITKAT)
             @Override
             public void onChildAdded(@NonNull DataSnapshot dataSnapshot, String prevChildKey) {
@@ -356,6 +360,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             public void onCancelled(@NonNull DatabaseError databaseError) {
             }
         });
+
     }
 
     private void getLocationPermission() {

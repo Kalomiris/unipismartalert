@@ -10,6 +10,6 @@ public class MyReceiver extends BroadcastReceiver {
     @SuppressLint("UnsafeProtectedBroadcastReceiver")
     @Override
     public void onReceive(Context context, Intent intent) {
-        Toast.makeText(context,"Power on/off",Toast.LENGTH_LONG).show();
+        Toast.makeText(context, "Power on/off", Toast.LENGTH_LONG).show();
     }
 }
