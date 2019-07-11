@@ -234,10 +234,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
-
-    }
 
     public void sendSMS(String msg) {
         final String longi = longitude;
