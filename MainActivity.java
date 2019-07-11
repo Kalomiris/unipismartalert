@@ -1,6 +1,10 @@
 package com.kalom.unipismartalert;
 
 import android.Manifest;
+import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,11 +14,10 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.location.Location;
-import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.CountDownTimer;
@@ -40,7 +43,6 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -61,21 +63,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private Speaker speaker;
-    private LocationManager locationManager;
-    private SmsManager smsManager;
     private SharedPreferences preferences;
     private String latitude, longitude;
     private boolean isActiveCountDownTimer = false;
-    private static boolean mLocationPermGranted = false;
     private static final String FINE_LOCATION = Manifest.permission.ACCESS_FINE_LOCATION;
-    private static final String COURSE_LOCATION = Manifest.permission.ACCESS_COARSE_LOCATION;
-    private static final String SEND_SMS = Manifest.permission.SEND_SMS;
-    private static final String READ_PHONE_STATE = Manifest.permission.READ_PHONE_STATE;
     private static final int PERMGRANTED = PackageManager.PERMISSION_GRANTED;
     private static final int REQUEST_CODE = 1234;
     private List<QuakeDataModel> quakeDataList = new ArrayList<>();
     private boolean runOnlyOnce;
-//    private boolean canSentSMS;
 
     private DatabaseReference ref = FirebaseDatabase.getInstance().getReference().child("earthquakes");
     GPSTracker gps;
@@ -94,6 +89,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         abordButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                isActiveCountDownTimer = false;
+                sendSMS("ΑΚΥΡΟ");
                 Intent intent = getIntent();
                 finish();
                 startActivity(intent);
@@ -108,24 +105,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 if (gps.canGetLocation()) {
                     latitude = String.valueOf(gps.getLatitude());
                     longitude = String.valueOf(gps.getLongitude());
-                    sendSMSMessage();
+                    smsPerm();
+                    sendSMS("");
                     message("Messages Sent!");
                 } else {
                     message("Message Failed...");
                 }
-//                if (canSentSMS()) {
-//                    Collection<String> phoneList;
-//                    phoneList = read().values();
-//                    for (String element : phoneList) {
-////                        Double[] location = getLocationData();
-////                        latitude = location[0].toString();
-////                        longitude = location[1].toString();
-//                        sendSMSMessage(element);
-//                    }
-//                    message("Messages Sent!");
-//                } else {
-//                    message("Message Failed...");
-//                }
+
             }
         });
         speekerButton.setOnClickListener(new View.OnClickListener() {
@@ -140,42 +126,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
          */
     }
 
-//    private Double[] getLocationData() {
-//        final Double[] result = new Double[2];
-//        new LocationListener() {
-//            @Override
-//            public void onLocationChanged(Location location) {
-//                result[0] = location.getLatitude();
-//                result[1] = location.getLongitude();
-//            }
-//
-//            @Override
-//            public void onStatusChanged(String provider, int status, Bundle extras) {
-//
-//            }
-//
-//            @Override
-//            public void onProviderEnabled(String provider) {
-//
-//            }
-//
-//            @Override
-//            public void onProviderDisabled(String provider) {
-//
-//            }
-//        };
-//        return result;
-//    }
-
-//    private boolean canSentSMS() {
-//        if (ActivityCompat.checkSelfPermission(this, SEND_SMS) != PERMGRANTED
-//                || ActivityCompat.checkSelfPermission(this, READ_PHONE_STATE) != PERMGRANTED) {
-//            ActivityCompat.requestPermissions(this, new String[]{SEND_SMS, READ_PHONE_STATE}, 123);
-//            return false;
-//        } else {
-//            return true;
-//        }
-//    }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
@@ -183,7 +133,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (deltaZ < 2)
             deltaZ = 0;
         lastZ = event.values[2];
-        if (deltaZ > plungeThreshold && !isActiveCountDownTimer) {
+        if (deltaZ > plungeThreshold && !isActiveCountDownTimer && !isPhonePluggedIn(this)) {
             isActiveCountDownTimer = true;
             new CountDownTimer(5000, 1000) {
                 ToneGenerator toneGen1;
@@ -194,7 +144,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     try {
                         toneGen1 = new ToneGenerator(AudioManager.STREAM_MUSIC, 1000);
                         toneGen1.startTone(ToneGenerator.TONE_CDMA_ABBR_ALERT, 1500);
-                    }catch (Exception e){
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
                 }
@@ -219,9 +169,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             quakeData.setCurrentTime(currentTime);
             ref.child(Long.toString(quekeId++)).setValue(quakeData);
             getTimeStamp();
-        }
-        if (quakeDataList.size() >= 5) {
-            message("DEATH EVERYWHERE!!!");
+            if (quakeDataList.size() >= 3) {
+                message("WARNING: EARTHQUAKE!!!");
+            }
         }
 
     }
@@ -239,8 +189,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     public void write() {
         SharedPreferences.Editor editor = preferences.edit();
-        editor.putString("anna", "6976860669");
-//        editor.putString("mhtsos", "6958619314");
+//        editor.putString("mhtsos", "+306958619314");
         editor.apply();
     }
 
@@ -253,16 +202,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         countdownText = findViewById(R.id.countdowntextView);
         sosButton = findViewById(R.id.sosButton);
         speekerButton = findViewById(R.id.speakButton);
-        smsManager = SmsManager.getDefault();
+
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
 
     }
 
     private void initializeService() {
         getLocationPermission();
-//        getSMSPermission();
         sensorManager = (SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
-//        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         write();
         if (sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null) {
             accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
@@ -270,15 +217,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             plungeThreshold = accelerometer.getMaximumRange() / 4;
             quakeThreshold = accelerometer.getMaximumRange();
         }
-//        if (ActivityCompat.checkSelfPermission(this,
-//                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
-//            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 123);
-//        else
-//            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000, (float) 0.1, this);
+
     }
 
 
-    protected void sendSMSMessage() {
+    protected void smsPerm() {
         if (ContextCompat.checkSelfPermission(this,
                 Manifest.permission.SEND_SMS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -294,22 +237,83 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
-        switch (requestCode) {
-            case MY_PERMISSIONS_REQUEST_SEND_SMS: {
-                if (grantResults.length > 0
-                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    SmsManager smsManager = SmsManager.getDefault();
-                    String message = "Βρίσκομαι στην τοποθεσία με γεωγραφικό μήκος " + longitude + " και γεωγραφικό πλάτος : " + latitude + " και χρειάζομαι βοήθεια";
-                    for (String phoneNo : read().values()) {
-                        smsManager.sendTextMessage(phoneNo, null, message, null, null);
-                    }
-                } else {
-                    Toast.makeText(getApplicationContext(),
-                            "SMS faild, please try again.", Toast.LENGTH_LONG).show();
-                    return;
+
+    }
+
+    public void sendSMS(String msg) {
+        final String longi = longitude;
+        final String lati = latitude;
+        final String message = (msg != null) ? msg :
+                "Γεωγραφικό μήκος: " + longi + "\nΓεωγραφικό πλάτος : " + lati + "\nΒΟΗΘΕΙΑ!";
+//        for (String phoneNo : read().values()) {
+//            smsManager.sendTextMessage(phoneNo, null, message, null, null);
+//        }
+
+
+        String SENT = "SMS_SENT";
+        String DELIVERED = "SMS_DELIVERED";
+
+        PendingIntent sentPI = PendingIntent.getBroadcast(this, 0, new Intent(
+                SENT), 0);
+
+        PendingIntent deliveredPI = PendingIntent.getBroadcast(this, 0,
+                new Intent(DELIVERED), 0);
+
+        // ---when the SMS has been sent---
+        registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context arg0, Intent arg1) {
+                switch (getResultCode()) {
+                    case Activity.RESULT_OK:
+                        ContentValues values = new ContentValues();
+                        for (String phoneNo : read().values()) {
+                            values.put("address", phoneNo);
+                            values.put("body", message);
+                        }
+                        getContentResolver().insert(
+                                Uri.parse("content://sms/sent"), values);
+                        Toast.makeText(getBaseContext(), "SMS sent",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                        Toast.makeText(getBaseContext(), "Generic failure",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_NO_SERVICE:
+                        Toast.makeText(getBaseContext(), "No service",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_NULL_PDU:
+                        Toast.makeText(getBaseContext(), "Null PDU",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case SmsManager.RESULT_ERROR_RADIO_OFF:
+                        Toast.makeText(getBaseContext(), "Radio off",
+                                Toast.LENGTH_SHORT).show();
+                        break;
                 }
             }
-        }
+        }, new IntentFilter(SENT));
+
+        // ---when the SMS has been delivered---
+        registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context arg0, Intent arg1) {
+                switch (getResultCode()) {
+                    case Activity.RESULT_OK:
+                        Toast.makeText(getBaseContext(), "SMS delivered",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                    case Activity.RESULT_CANCELED:
+                        Toast.makeText(getBaseContext(), "SMS not delivered",
+                                Toast.LENGTH_SHORT).show();
+                        break;
+                }
+            }
+        }, new IntentFilter(DELIVERED));
+
+        SmsManager sms = SmsManager.getDefault();
+        sms.sendTextMessage("+306958619314", null, message, sentPI, deliveredPI);
     }
 
 
@@ -322,7 +326,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         int chargePlug = batteryIntent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
         boolean usbCharge = (chargePlug == BatteryManager.BATTERY_PLUGGED_USB);
-//        boolean acCharge = (chargePlug == BatteryManager.BATTERY_PLUGGED_AC);
 
         if (batteryCharge) {
             charging = true;
@@ -330,9 +333,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (usbCharge) {
             charging = true;
         }
-//        if (acCharge) {
-//            charging = true;
-//        }
+
 
         return charging;
     }
@@ -377,23 +378,4 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-//    private void getSMSPermission() {
-//        try {
-//            if (ContextCompat.checkSelfPermission(this,
-//                    Manifest.permission.SEND_SMS)
-//                    != PackageManager.PERMISSION_GRANTED) {
-//                if (ActivityCompat.shouldShowRequestPermissionRationale(this,
-//                        Manifest.permission.SEND_SMS)) {
-//                } else {
-//                    ActivityCompat.requestPermissions(this,
-//                            new String[]{Manifest.permission.SEND_SMS},
-//                            MY_PERMISSIONS_REQUEST_SEND_SMS);
-//                }
-//            } else {
-//                canSentSMS = true;
-//            }
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//    }
 }
